@@ -2,13 +2,16 @@ const express = require("express");
 const app = express();
 const healthRoute = require('./routes/health.route');
 const testRoute = require('./routes/test.route');
+const userRoute = require('./routes/user.route');
 
 app.use(express.json());
 
 app.use('/health',healthRoute);
 app.use('/test',testRoute);
+app.use('/api/users',userRoute);
 
 
+//centralized error middle ware
 app.use((err, req, res, next) => {
   console.error("Error: ",err.message);
 
