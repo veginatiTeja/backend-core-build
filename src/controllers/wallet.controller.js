@@ -76,13 +76,24 @@ exports.deposit = async (req, res, next) => {
 
 exports.transfer = async (req, res, next) => {
     try {
+
+        const idempotencyKey = req.headers["idempotency-key"];
+
+        if(!idempotencyKey) {
+            return res.status(400).json({
+                success: false,
+                message: "Idempotency-Key header is required"
+            });
+        };
+
         const senderId = req.user.userId;
         let { receiverId, amount } = req.body;
 
         console.log(
             "Sender:", senderId,
             "Receiver:", receiverId,
-            "Amount:", amount
+            "Amount:", amount,
+            "idempotency-key: ",idempotencyKey
         );
 
         // ✅ Basic validation
@@ -115,7 +126,8 @@ exports.transfer = async (req, res, next) => {
         const result = await walletService.transferMoney(
             senderId,
             receiverId,
-            amount
+            amount,
+            idempotencyKey
         );
 
         return res.status(200).json({

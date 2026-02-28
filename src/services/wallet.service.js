@@ -44,11 +44,20 @@ exports.depositMoney = async (userId, amount) => {
 };
 
 
-exports.transferMoney = async (senderId, receiverId, amount) => {
+exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => {
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
+
+        //check if idempotency key alerdy exits
+
+        const existing = await client.query(`SELECT response FROM idempotency_keys WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
+
+        if (existing.rows.length > 0) {
+            await client.query("ROLLBACK");
+            return existing.rows[0].response; // return saved response
+        }
 
         if (senderId === receiverId) {
             throw new Error("Cannot transfer to same account");
@@ -119,13 +128,19 @@ exports.transferMoney = async (senderId, receiverId, amount) => {
             [senderId, receiverId, amount]
         );
 
-        await client.query("COMMIT");
-
-        return {
+        const response = {
             message: "Transfer Successful",
             senderBalance: deductResult.rows[0].balance,
             receiverBalance: addResult.rows[0].balance
         };
+
+        //Store idempotent record 
+        await client.query(`INSERT INTO idempotency_keys (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [senderId, idempotencyKey, response]);
+
+        await client.query("COMMIT");
+
+        return response;
+
 
     } catch (error) {
         await client.query("ROLLBACK");
@@ -148,5 +163,5 @@ exports.getTransactions = async (userId, page = 1, limit = 10) => {
 
     const total = Number(countResult.rows[0].count);
 
-    return { total, page, limit, transactions: transactionResult.rows}
+    return { total, page, limit, transactions: transactionResult.rows }
 }
