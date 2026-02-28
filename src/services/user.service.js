@@ -14,7 +14,7 @@ exports.createUser = async (name, email) => {
 };
 
 
-//update register with transaction + wallet creatio 
+//update register with transaction + wallet creation
 exports.registerUser = async (name, email, passwordHash) => {
 
     const client = await pool.connect();

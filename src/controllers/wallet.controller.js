@@ -6,24 +6,24 @@ const walletService = require("../services/wallet.service");
  * GET logged-in user's wallet balance
  */
 exports.getBalance = async (req, res, next) => {
-    try{
+    try {
         const { userId } = req.user;
-        console.log("getting balance from user id is ",userId);
-       const wallet = await walletService.getWalletByUserId(userId);
+        console.log("getting balance from user id is ", userId);
+        const wallet = await walletService.getWalletByUserId(userId);
 
-       if(!wallet) {
-        const error = new Error("Wallet not found");
-        error.statusCode = 400;
-        throw error;
-       }
+        if (!wallet) {
+            const error = new Error("Wallet not found");
+            error.statusCode = 400;
+            throw error;
+        }
 
-       res.status(200).json({
-        success: true,
-        balance: wallet.balance
-       })
+        res.status(200).json({
+            success: true,
+            balance: wallet.balance
+        })
 
     }
-    catch(error) {
+    catch (error) {
         next(error);
     }
 }
@@ -35,35 +35,115 @@ exports.getBalance = async (req, res, next) => {
 
 
 exports.deposit = async (req, res, next) => {
-    try{
+    try {
         const { amount } = req.body;
 
         const NumeriAmount = Number(amount);
         //validate amount 
-        console.log("deposit balance to user id is ",req.user.userId, "amount is ",amount);
+        console.log("deposit balance to user id is ", req.user.userId, "amount is ", amount);
 
-        if(amount === undefined || amount === null || isNaN(NumeriAmount) || NumeriAmount <= 0) {
+        if (amount === undefined || amount === null || isNaN(NumeriAmount) || NumeriAmount <= 0) {
             const error = new Error("Invalid deposit amount");
             error.statusCode = 400;
             throw error;
         };
 
         const updateWallet = await walletService.depositMoney(req.user.userId, NumeriAmount);
-        console.log("updateWallet status ",updateWallet);
+        console.log("updateWallet status ", updateWallet);
 
-        if(!updateWallet) {
-             const error = new Error("Wallet not found");
+        if (!updateWallet) {
+            const error = new Error("Wallet not found");
             error.statusCode = 400;
             throw error;
         };
 
         res.status(200).json({
-           success: true,
-           message: "Deposit Successful",
-           newBalance: updateWallet.balance,
+            success: true,
+            message: "Deposit Successful",
+            newBalance: updateWallet.balance,
         });
-    } 
-    catch(error) {
+    }
+    catch (error) {
         next(error);
+    }
+}
+
+
+/**
+ * POST /api/wallet/transfer
+ * Transfer money between two logged in users
+ */
+
+exports.transfer = async (req, res, next) => {
+    try {
+        const senderId = req.user.userId;
+        let { receiverId, amount } = req.body;
+
+        console.log(
+            "Sender:", senderId,
+            "Receiver:", receiverId,
+            "Amount:", amount
+        );
+
+        // ✅ Basic validation
+        if (!receiverId || amount === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "receiverId and amount are required"
+            });
+        }
+
+        // Convert safely
+        receiverId = Number(receiverId);
+        amount = Number(amount);
+
+        if (isNaN(receiverId) || isNaN(amount)) {
+            return res.status(400).json({
+                success: false,
+                message: "receiverId and amount must be valid numbers"
+            });
+        }
+
+        if (amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Amount must be greater than 0"
+            });
+        }
+
+        // ✅ Call service
+        const result = await walletService.transferMoney(
+            senderId,
+            receiverId,
+            amount
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: result.message,
+            senderBalance: result.senderBalance,
+            receiverBalance: result.receiverBalance
+        });
+
+    } catch (error) {
+      next(error);
+    }
+};
+
+exports.getTransactions  = async (req, res, next) => {
+    try{
+       const userId = req.user.userId;
+       const page = Number(req.query.page) || 1;
+       const limit = Number(req.query.limit) || 10;
+
+       const result = await walletService.getTransactions(userId, page, limit);
+           
+       res.status(200).json({
+        success: true,
+        ...result
+       });
+
+    }catch(error){
+       next(error);
     }
 }
