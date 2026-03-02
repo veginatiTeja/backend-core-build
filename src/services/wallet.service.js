@@ -52,7 +52,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
 
         //check if idempotency key alerdy exits
 
-        const existing = await client.query(`SELECT response FROM idempotency_keys WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
+        const existing = await client.query(`SELECT response FROM idempotency_key WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
 
         if (existing.rows.length > 0) {
             await client.query("ROLLBACK");
@@ -135,7 +135,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         };
 
         //Store idempotent record 
-        await client.query(`INSERT INTO idempotency_keys (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [senderId, idempotencyKey, response]);
+        await client.query(`INSERT INTO idempotency_key (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [senderId, idempotencyKey, response]);
 
         await client.query("COMMIT");
 
@@ -164,4 +164,111 @@ exports.getTransactions = async (userId, page = 1, limit = 10) => {
     const total = Number(countResult.rows[0].count);
 
     return { total, page, limit, transactions: transactionResult.rows }
-}
+};
+
+exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        //Check idempotency
+
+        const existing = await client.query(`SELECT response FROM idempotency_keys WHERE user_id = $1 AND idempotency_key = $2`, [userId, idempotencyKey]);
+
+        if (existing.rows.length > 0) {
+            await client.query("ROLLBACK");
+            return existing.rows[0].response;
+        };
+
+        //lock wallet row
+
+        const wallet = await client.query(`SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`, [userId]);
+
+        if (wallet.rows.length === 0) {
+            throw new Error("wallet not found");
+        };
+
+        console.log("wallet result ", wallet.rows[0]);
+        const currentBalance = Number(wallet.rows[0].balance);
+
+        //Check sufficient balance
+        if (currentBalance < amount) {
+            throw new Error("Insufficient balance");
+        };
+
+        //deduct balance
+
+        const updatedWallet = await client.query(`UPDATE wallets SET balance = balance - $1 WHERE user_id = $2 RETURNING balance`, [amount, userId]);
+
+        //Insert transaction record
+
+
+        const transactionResult = await client.query(`INSERT INTO transactions (sender_id, amount, type, status) VALUES ($1, $2, 'withdrawal','pending') RETURNING id`, [userId, amount]);
+
+        const transactionId = transactionResult.rows[0].id;
+        const response = {
+            message: "Withdrawal request created",
+            transactionId,
+            status: "pending",
+            newBalance: updatedWallet.rows[0].balance
+
+        };
+
+        //store idempotency record
+
+        await client.query(`INSERT INTO idempotency_keys (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [userId, idempotencyKey, response]);
+
+        await client.query("COMMIT");
+
+        return response;
+    }
+    catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    }
+    finally {
+        client.release();
+    };
+};
+
+exports.processWithdrawal = async (transactionId, approve) => {
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const txResult = await client.query(`SELECT * FROM transactions WHERE id = $1 AND type = 'withdrawal' FOR UPDATE`, [transactionId]);
+
+        if (txResult.rows.length === 0) {
+            throw new Error("Withdrawal transaction not found");
+        }
+
+        const tx = txResult.rows[0];
+
+        if (tx.status !== 'pending') {
+            throw new Error("Withdrawal alerdy processed");
+        };
+
+        if (approve) {
+            //Mark as completed
+            await client.query(`UPDATE transactions SET status = 'completed' WHERE id = $1`, [transactionId])
+        }
+        else {
+            //Refund balance
+            await client.query(`UPDATE wallets SET balance = balance + $1 WHERE user_id = $2`, [tx.amount, tx.sender_id]);
+            await client.query(`UPDATE transactions SET status = 'failed' WHERE id = $1`, [transactionId]);
+        };
+
+
+        await client.query("COMMIT");
+        return { message: "Withdrawal processed successfully" };
+    }
+    catch (error) {
+        client.query("ROLLBACK");
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+};

@@ -79,7 +79,7 @@ exports.transfer = async (req, res, next) => {
 
         const idempotencyKey = req.headers["idempotency-key"];
 
-        if(!idempotencyKey) {
+        if (!idempotencyKey) {
             return res.status(400).json({
                 success: false,
                 message: "Idempotency-Key header is required"
@@ -93,7 +93,7 @@ exports.transfer = async (req, res, next) => {
             "Sender:", senderId,
             "Receiver:", receiverId,
             "Amount:", amount,
-            "idempotency-key: ",idempotencyKey
+            "idempotency-key: ", idempotencyKey
         );
 
         // ✅ Basic validation
@@ -138,24 +138,76 @@ exports.transfer = async (req, res, next) => {
         });
 
     } catch (error) {
-      next(error);
+        next(error);
     }
 };
 
-exports.getTransactions  = async (req, res, next) => {
+exports.getTransactions = async (req, res, next) => {
+    try {
+        const userId = req.user.userId;
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+
+        const result = await walletService.getTransactions(userId, page, limit);
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.withdraw = async (req, res, next) => {
+    try {
+        const userId = req.user.userId;
+        const amount = req.body.amount;
+        const idempotencyKey = req.headers["idempotency-key"];
+
+        if (!idempotencyKey) {
+            return res.status(400).json({
+                success: false,
+                message: "Idempotency-Key header is required"
+            });
+        };
+
+        const numericAmount = Number(amount);
+
+        if (!numericAmount || numericAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid withdrawal amount"
+            });
+        }
+
+
+        const result = await walletService.withDrawMoney(userId, numericAmount, idempotencyKey);
+
+        return res.status(200).json({
+            success: true,
+            result
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}
+
+exports.processWithdrawal = async (req, res, next) => {
     try{
-       const userId = req.user.userId;
-       const page = Number(req.query.page) || 1;
-       const limit = Number(req.query.limit) || 10;
 
-       const result = await walletService.getTransactions(userId, page, limit);
-           
-       res.status(200).json({
-        success: true,
-        ...result
-       });
+        const { transactionId, approve} = req.body;
 
-    }catch(error){
-       next(error);
+        const result = await walletService.processWithdrawal(transactionId, approve);
+
+        res.status(200).json({
+            success: true,
+            message: result.message
+        });
+
+    }catch(error) {
+        next(error);
     }
 }
