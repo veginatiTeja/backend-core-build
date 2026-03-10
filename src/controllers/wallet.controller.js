@@ -145,10 +145,12 @@ exports.transfer = async (req, res, next) => {
 exports.getTransactions = async (req, res, next) => {
     try {
         const userId = req.user.userId;
-        const page = Number(req.query.page) || 1;
-        const limit = Number(req.query.limit) || 10;
+        // const page = Number(req.query.page) || 1;
+        // const limit = Number(req.query.limit) || 10;
+        const cursor = req.query.cursor;
+        const limit = req.query.limit || 10;
 
-        const result = await walletService.getTransactions(userId, page, limit);
+        const result = await walletService.getTransactions(userId, cursor, limit);
 
         res.status(200).json({
             success: true,

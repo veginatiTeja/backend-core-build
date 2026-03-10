@@ -1,10 +1,11 @@
 const pool = require("../config/db");
+const refundQueue = require("../queues/refund.queue");
+const { addLedgerEntry } = require('./ledger.service');
 
 exports.getWalletByUserId = async (userId) => {
     const result = await pool.query("SELECT id, balance from wallets WHERE  user_id = $1", [userId]);
     return result.rows[0];
 };
-
 
 exports.depositMoney = async (userId, amount) => {
 
@@ -25,6 +26,10 @@ exports.depositMoney = async (userId, amount) => {
 
         const updatedWallet = await client.query("UPDATE wallets SET balance = balance + $2 WHERE user_id = $1 RETURNING balance", [userId, amount]);
 
+        // add ledger entry
+
+        await addLedgerEntry(client, userId, 'CREDIT', amount, 'deposit');
+
         //Insert transaction record
 
         await client.query("INSERT INTO transactions (receiver_id, amount, type) VALUES ($1, $2, 'deposit')", [userId, amount]);
@@ -43,16 +48,16 @@ exports.depositMoney = async (userId, amount) => {
 
 };
 
-
 exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => {
     const client = await pool.connect();
 
     try {
+        console.log("trasfer money api begins");
         await client.query("BEGIN");
 
         //check if idempotency key alerdy exits
 
-        const existing = await client.query(`SELECT response FROM idempotency_key WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
+        const existing = await client.query(`SELECT response FROM idempotency_keys WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
 
         if (existing.rows.length > 0) {
             await client.query("ROLLBACK");
@@ -110,7 +115,9 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
 
         if (deductResult.rows.length === 0) {
             throw new Error("Failed to deduct from sender");
-        }
+        };
+
+        await addLedgerEntry(client, senderId, "DEBIT", amount, 'transfer');
 
         // ✅ Add to receiver
         const addResult = await client.query(
@@ -121,6 +128,8 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         if (addResult.rows.length === 0) {
             throw new Error("Failed to add to receiver");
         }
+
+        await addLedgerEntry(client, receiverId, "CREDIT", amount, "transfer");
 
         // ✅ Insert transaction record
         await client.query(
@@ -135,7 +144,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         };
 
         //Store idempotent record 
-        await client.query(`INSERT INTO idempotency_key (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [senderId, idempotencyKey, response]);
+        await client.query(`INSERT INTO idempotency_keys (user_id, idempotency_key, response) VALUES ($1, $2, $3)`, [senderId, idempotencyKey, response]);
 
         await client.query("COMMIT");
 
@@ -150,20 +159,40 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
     }
 };
 
-exports.getTransactions = async (userId, page = 1, limit = 10) => {
-    const offset = (page - 1) * limit;
+exports.getTransactions = async (userId, cursor = null, limit = 10) => {
 
+    let query = `SELECT * FROM transactions WHERE (sender_id = $1 OR receiver_id = $1)`;
 
+    let values = [userId];
+
+    if (cursor) {
+        query += ` AND created_at < $2 `;
+        values.push(cursor)
+    }
+
+    query += `ORDER BY created_at DESC LIMIT $${values.length + 1}`;
+
+    values.push(limit);
+
+    console.log("query to get transactions ", query, "Values ", values);
+    const result = await pool.query(query, values);
+
+    const transactions = result.rows;
+    console.log("transactoions ", transactions);
+
+    const nextCursor = transactions.length > 0 ? transactions[transactions.length - 1].created_at : null;
+
+    return { transactions, nextCursor };
     //get transactions
-    const transactionResult = await pool.query(`SELECT * FROM transactions WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [userId, limit, offset]);
+    // const transactionResult = await pool.query(`SELECT * FROM transactions WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [userId, limit, offset]);
 
-    //get total count
+    // //get total count
 
-    const countResult = await pool.query(`SELECT COUNT(*) FROM transactions WHERE sender_id = $1 OR receiver_id = $1`, [userId]);
+    // const countResult = await pool.query(`SELECT COUNT(*) FROM transactions WHERE sender_id = $1 OR receiver_id = $1`, [userId]);
 
-    const total = Number(countResult.rows[0].count);
+    // const total = Number(countResult.rows[0].count);
 
-    return { total, page, limit, transactions: transactionResult.rows }
+    // return { total, page, limit, transactions: transactionResult.rows }
 };
 
 exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
@@ -201,8 +230,11 @@ exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
 
         const updatedWallet = await client.query(`UPDATE wallets SET balance = balance - $1 WHERE user_id = $2 RETURNING balance`, [amount, userId]);
 
-        //Insert transaction record
+        //add ledger entry
 
+        await addLedgerEntry(client, userId, "DEBIT", amount, "withdrawal_request");
+
+        //Insert transaction record
 
         const transactionResult = await client.query(`INSERT INTO transactions (sender_id, amount, type, status) VALUES ($1, $2, 'withdrawal','pending') RETURNING id`, [userId, amount]);
 
@@ -234,7 +266,7 @@ exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
 
 exports.processWithdrawal = async (transactionId, approve) => {
     const client = await pool.connect();
-
+    console.log("processing withdrawal api begins");
     try {
         await client.query("BEGIN");
 
@@ -255,9 +287,18 @@ exports.processWithdrawal = async (transactionId, approve) => {
             await client.query(`UPDATE transactions SET status = 'completed' WHERE id = $1`, [transactionId])
         }
         else {
+            console.log("admin is not approved your request so money is refunding from wallets");
             //Refund balance
-            await client.query(`UPDATE wallets SET balance = balance + $1 WHERE user_id = $2`, [tx.amount, tx.sender_id]);
             await client.query(`UPDATE transactions SET status = 'failed' WHERE id = $1`, [transactionId]);
+
+            //push refund job to the queue
+
+            const job = await refundQueue.add("refundQueue", {
+                userId: tx.sender_id,
+                amount: tx.amount
+            });  //bullmq pushes job to redis and redis stores the job in a queue
+
+            console.log("Refund job added:", job.id);
         };
 
 
@@ -265,7 +306,7 @@ exports.processWithdrawal = async (transactionId, approve) => {
         return { message: "Withdrawal processed successfully" };
     }
     catch (error) {
-        client.query("ROLLBACK");
+        await client.query("ROLLBACK");
         throw error;
     }
     finally {

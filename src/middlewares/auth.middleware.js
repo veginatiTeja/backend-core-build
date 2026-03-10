@@ -24,7 +24,9 @@ exports.authenticate = (req, res, next) => {  //express middleware
 
         //attach user info to request
 
-        req.user = decode
+        req.user = decode;
+        
+        console.log("user information details ",req.user);
 
         next();  //Authentication passed, continue to controller
     }
