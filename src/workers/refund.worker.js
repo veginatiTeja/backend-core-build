@@ -3,6 +3,7 @@ const { Worker } = require("bullmq");
 const connection = require("../config/redis");
 const pool = require("../config/db");
 const { addLedgerEntry } = require("../services/ledger.service");
+const deadLetterQueue = require("../queues/deadLetter.queue");
 
 console.log("Refund Worker Started...");
 
@@ -32,14 +33,15 @@ const worker = new Worker(
             await client.query("COMMIT");
 
             console.log("Refund completed for:", userId);
+            throw new Error("Testing Retry Mechanism");
+
 
         } catch (error) {
 
             await client.query("ROLLBACK");
-            console.error("Refund failed:", error);
+            console.log("Refund failed:", error.message);
 
-            throw error;
-
+            throw new Error("Test failure");
         } finally {
 
             client.release();
@@ -53,12 +55,23 @@ const worker = new Worker(
     }
 );
 
-worker.on("completed", job => {
+worker.on("completed", (job) => {
     console.log("Job completed:", job.id);
 });
 
-worker.on("failed", (job, err) => {
-    console.log("Job failed:", err.message);
+worker.on("failed", async (job, err) => {
+    console.log(`Job ${job.id} failed. Attempt ${job.attemptsMade}`);
+
+    if (job.attemptsMade === job.opts.attempts) {
+        console.log("Moving job to Dead Letter Queue");
+
+        await deadLetterQueue.add("failedRefund", {
+            jobId: job.id,
+            userId: job.data.userId,
+            amount: job.data.amount,
+            error: err.message
+        }) // no need a dead letter queue worker , used for store failed jobs, inverstigate later, manual retry
+    };
 });
 
 worker.on("error", (err) => {

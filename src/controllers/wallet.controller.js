@@ -1,5 +1,5 @@
 const walletService = require("../services/wallet.service");
-
+const redis = require('../config/redis');
 
 /**
  * GET /api/wallet/balance

@@ -2,7 +2,7 @@
 const { Queue } = require("bullmq");
 
 const connection = require("../config/redis")
-console.log("queue file is running")
+console.log("refund queue file is running")
 
 const refundQueue = new Queue("refundQueue", {
     connection

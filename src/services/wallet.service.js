@@ -293,9 +293,17 @@ exports.processWithdrawal = async (transactionId, approve) => {
 
             //push refund job to the queue
 
-            const job = await refundQueue.add("refundQueue", {
+            const job = await refundQueue.add("refundJob", {
                 userId: tx.sender_id,
                 amount: tx.amount
+            }, {
+                attempts: 5,
+                backoff: {
+                    type: "exponential",
+                    delay: 5000
+                },
+                removeOnComplete: true,
+                removeOnFail: false
             });  //bullmq pushes job to redis and redis stores the job in a queue
 
             console.log("Refund job added:", job.id);
