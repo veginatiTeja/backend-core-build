@@ -33,7 +33,6 @@ const worker = new Worker(
             await client.query("COMMIT");
 
             console.log("Refund completed for:", userId);
-            throw new Error("Testing Retry Mechanism");
 
 
         } catch (error) {

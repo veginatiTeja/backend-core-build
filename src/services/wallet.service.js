@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const refundQueue = require("../queues/refund.queue");
 const { addLedgerEntry } = require('./ledger.service');
+const webhookQueue = require('../queues/webhook.queue');
 
 exports.getWalletByUserId = async (userId) => {
     const result = await pool.query("SELECT id, balance from wallets WHERE  user_id = $1", [userId]);
@@ -283,8 +284,26 @@ exports.processWithdrawal = async (transactionId, approve) => {
         };
 
         if (approve) {
+            console.log("admin is approved withdrawal request");
             //Mark as completed
-            await client.query(`UPDATE transactions SET status = 'completed' WHERE id = $1`, [transactionId])
+            await client.query(`UPDATE transactions SET status = 'completed' WHERE id = $1`, [transactionId]);
+
+            //Webhook should only fire when withdrawal is approved
+            // push webhook job
+
+            await webhookQueue.add("transactionWebhook", {
+                event: "withdrawal.completed",
+                transactionId: transactionId,
+                userId: tx.sender_id,
+                amount: tx.amount
+            }, {
+                attempts: 5,
+                backoff: {
+                    type: "exponential",
+                    delay: 5000
+                }
+            });
+
         }
         else {
             console.log("admin is not approved your request so money is refunding from wallets");
@@ -314,6 +333,7 @@ exports.processWithdrawal = async (transactionId, approve) => {
         return { message: "Withdrawal processed successfully" };
     }
     catch (error) {
+        console.log("errror ",error);
         await client.query("ROLLBACK");
         throw error;
     }

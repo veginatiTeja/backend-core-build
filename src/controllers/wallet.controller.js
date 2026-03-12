@@ -77,14 +77,7 @@ exports.deposit = async (req, res, next) => {
 exports.transfer = async (req, res, next) => {
     try {
 
-        const idempotencyKey = req.headers["idempotency-key"];
-
-        if (!idempotencyKey) {
-            return res.status(400).json({
-                success: false,
-                message: "Idempotency-Key header is required"
-            });
-        };
+        const idempotencyKey = req.idempotencyKey;
 
         const senderId = req.user.userId;
         let { receiverId, amount } = req.body;
@@ -130,12 +123,21 @@ exports.transfer = async (req, res, next) => {
             idempotencyKey
         );
 
-        return res.status(200).json({
+        const response = {
             success: true,
-            message: result.message,
-            senderBalance: result.senderBalance,
-            receiverBalance: result.receiverBalance
-        });
+            ...result
+        };
+
+        //store response in redis
+
+        await redis.set(
+            idempotencyKey,
+            JSON.stringify(response),
+            "EX",
+            3600
+        )
+
+        return res.status(200).json(response);
 
     } catch (error) {
         next(error);
@@ -166,14 +168,7 @@ exports.withdraw = async (req, res, next) => {
     try {
         const userId = req.user.userId;
         const amount = req.body.amount;
-        const idempotencyKey = req.headers["idempotency-key"];
-
-        if (!idempotencyKey) {
-            return res.status(400).json({
-                success: false,
-                message: "Idempotency-Key header is required"
-            });
-        };
+        const idempotencyKey = req.idempotencyKey;
 
         const numericAmount = Number(amount);
 
@@ -187,10 +182,21 @@ exports.withdraw = async (req, res, next) => {
 
         const result = await walletService.withDrawMoney(userId, numericAmount, idempotencyKey);
 
-        return res.status(200).json({
+        const response = {
             success: true,
-            result
-        });
+            ...result
+        }
+
+        // store response in redis
+
+        await redis.set(
+            idempotencyKey,
+            JSON.stringify(response),
+            "EX",
+            3600
+        );
+
+        return res.status(200).json(response);
     }
     catch (error) {
         next(error);
@@ -198,9 +204,9 @@ exports.withdraw = async (req, res, next) => {
 }
 
 exports.processWithdrawal = async (req, res, next) => {
-    try{
+    try {
 
-        const { transactionId, approve} = req.body;
+        const { transactionId, approve } = req.body;
 
         const result = await walletService.processWithdrawal(transactionId, approve);
 
@@ -209,7 +215,7 @@ exports.processWithdrawal = async (req, res, next) => {
             message: result.message
         });
 
-    }catch(error) {
+    } catch (error) {
         next(error);
     }
 }

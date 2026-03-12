@@ -2,6 +2,7 @@ const redis = require("../config/redis");
 
 async function idempotencyMiddleware(req, res, next) {
     
+    console.log("hitting idempotency protection middleware ")
     const key = req.headers["idempotency-key"];
 
     if(!key) {
@@ -16,7 +17,7 @@ async function idempotencyMiddleware(req, res, next) {
 
     if(cached) {
         console.log("Duplicate request detected from redis");
-        return res.json(JSON.parse(cached));
+        return res.status(200).json(JSON.parse(cached));
     }
  
     req.idempotencyKey  = key;
@@ -24,4 +25,4 @@ async function idempotencyMiddleware(req, res, next) {
 
 };
 
-module.exports = idempotencyMiddleware;
+module.exports = { idempotencyMiddleware };
