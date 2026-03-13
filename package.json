@@ -13,6 +13,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@bull-board/api": "^6.20.5",
+    "@bull-board/express": "^6.20.5",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.70.4",
@@ -22,7 +24,8 @@
     "ioredis": "^5.10.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
-    "pg": "^8.18.0"
+    "pg": "^8.18.0",
+    "rate-limiter-flexible": "^9.1.1"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

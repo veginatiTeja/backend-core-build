@@ -6,6 +6,7 @@ const userRoute = require('./routes/user.route');
 const walletRoute = require('./routes/wallet.route');
 const { errorMiddleware } = require('./middlewares/error.middleware');
 const { apiLimiter } = require("./middlewares/rateLimit.middleware");
+const queueDashboard = require('./config/queueDashboard');
 
 app.use(express.json());
 
@@ -15,6 +16,8 @@ app.use('/api/users', userRoute);
 app.use('/api/wallet', walletRoute)
 app.use(errorMiddleware);
 app.use(apiLimiter);
+
+app.use('/admin/queues', queueDashboard.getRouter());
 
 //centralized error middle ware
 app.use((err, req, res, next) => {
