@@ -41,6 +41,15 @@ services:
     command: node src/workers/webhook.worker.js
     restart: always
 
+  webhook-receiver:
+    build:
+      context: ../node-deep-practise
+    container_name: webhook-receiver
+    command: node webhookReceiver.js
+    ports:
+      - "4000:4000"
+    restart: always
+
   postgres:
     image: postgres:15
     container_name: wallet-postgres
@@ -52,6 +61,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   redis:
     image: redis:7
