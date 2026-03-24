@@ -25,7 +25,8 @@
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
     "pg": "^8.18.0",
-    "rate-limiter-flexible": "^9.1.1"
+    "rate-limiter-flexible": "^9.1.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

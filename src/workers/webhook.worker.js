@@ -2,6 +2,8 @@ const { Worker } = require("bullmq");
 const connection = require('../config/redis');
 const axios = require("axios");
 const crypto = require("crypto");
+const deadLetterQueue = require('../queues/deadLetter.queue');
+const { v4:uuidv4} = require("uuid");
 
 const SECRET = "supersecretkey"
 
@@ -9,7 +11,10 @@ const worker = new Worker("webhookQueue", async (job) => {
     try {
         console.log("webhook worker receiving the job ", job.id);
 
-        const payload = job.data;
+        const payload = {
+            webhookId: uuidv4(),   //idempotency key
+            ...job.data
+        }
         const body = JSON.stringify(payload);
 
         const signature = crypto
@@ -36,11 +41,20 @@ const worker = new Worker("webhookQueue", async (job) => {
         if (error.response) {
             console.log("❌ RESPONSE STATUS:", error.response.status);
             console.log("❌ RESPONSE DATA:", error.response.data);
-        }
+        };
 
         if (error.request) {
             console.log("❌ NO RESPONSE RECEIVED");
-        }
+        };
+
+        //push to DLQ
+
+        await deadLetterQueue.add("failedWebhook", {
+            originalJobId: job.id,
+            payload: job.data,
+            failedReason: error.message,
+            failedAt: new Date()
+        });
 
         throw error;
     }
