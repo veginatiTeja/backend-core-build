@@ -1,4 +1,5 @@
 const Redis = require("ioredis");
+const logger = require('./logger');
 
 const connection = new Redis({
   host: process.env.REDIS_HOST,
@@ -8,11 +9,11 @@ const connection = new Redis({
 });
 
 connection.on("connect", () => {
-  console.log("Redis connected successfully");
+  logger.info("Redis connected successfully");
 });
 
 connection.on("error", (err) => {
-  console.error("Redis error:", err);
+  logger.error("Redis error:", err);
 });
 
 module.exports = connection;

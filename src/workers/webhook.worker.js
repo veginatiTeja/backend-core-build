@@ -4,12 +4,17 @@ const axios = require("axios");
 const crypto = require("crypto");
 const deadLetterQueue = require('../queues/deadLetter.queue');
 const { v4:uuidv4} = require("uuid");
+const logger = require("../config/logger");
 
 const SECRET = "supersecretkey"
 
 const worker = new Worker("webhookQueue", async (job) => {
     try {
-        console.log("webhook worker receiving the job ", job.id);
+          
+        logger.info("processing webhook job ", {
+            jobId: job.id,
+            data: job.data
+        });
 
         const payload = {
             webhookId: uuidv4(),   //idempotency key
@@ -33,10 +38,15 @@ const worker = new Worker("webhookQueue", async (job) => {
             }
         );
 
-        console.log("✅ Webhook delivered:", response.status);
+        logger.info("✅ Webhook delivered Successfully :", {
+            jobId: job.id
+        });
 
     } catch (error) {
-        console.log("❌ ERROR MESSAGE:", error.message);
+        logger.info("❌ Webhook delivery failed ", {
+            jobId: job.id,
+            error: error.message
+        });
 
         if (error.response) {
             console.log("❌ RESPONSE STATUS:", error.response.status);

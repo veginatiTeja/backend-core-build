@@ -1,4 +1,7 @@
 const express = require("express");
+const swaggerUi = require("swagger-ui-express");
+
+const swaggerSpec = require('./config/swagger');
 const app = express();
 const healthRoute = require('./routes/health.route');
 const testRoute = require('./routes/test.route');
@@ -7,12 +10,16 @@ const walletRoute = require('./routes/wallet.route');
 const { errorMiddleware } = require('./middlewares/error.middleware');
 const { apiLimiter } = require("./middlewares/rateLimit.middleware");
 const queueDashboard = require('./config/queueDashboard');
+const requestLogger = require('./middlewares/logger.middleware');
 
 app.use(express.json());
 
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.use(requestLogger);
 app.use(apiLimiter);
 
-app.use('/health', healthRoute);
+app.use('/service', healthRoute);
 app.use('/test', testRoute);
 app.use('/api/users', userRoute);
 app.use('/api/wallet', walletRoute)

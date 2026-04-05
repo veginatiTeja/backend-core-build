@@ -12,8 +12,16 @@ services:
     environment:
       DB_HOST: postgres
       REDIS_HOST: redis
-    command: node src/server.js
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npx nodemon src/server.js
     restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/service/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   refund-worker:
     build: .
@@ -25,7 +33,10 @@ services:
     environment:
       DB_HOST: postgres
       REDIS_HOST: redis
-    command: node src/workers/refund.worker.js
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npx nodemon src/workers/refund.worker.js
     restart: always
 
   webhook_worker:
@@ -38,7 +49,10 @@ services:
     environment:
       DB_HOST: postgres
       REDIS_HOST: redis
-    command: node src/workers/webhook.worker.js
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npx nodemon src/workers/webhook.worker.js
     restart: always
 
   webhook-receiver:
