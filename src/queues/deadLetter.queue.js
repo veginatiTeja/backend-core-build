@@ -1,10 +1,11 @@
 const { Queue } = require("bullmq");
 const connection = require("../config/redis");
-
-console.log("Dead letter queue is running ");
+const logger = require("../config/logger");
 
 const deadLetterQueue = new Queue("deadLetterQueue", {
     connection
 });
+
+logger.info("Dead Letter Queue initialized");
 
 module.exports = deadLetterQueue;

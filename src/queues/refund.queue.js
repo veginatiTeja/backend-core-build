@@ -1,12 +1,18 @@
-
 const { Queue } = require("bullmq");
-
-const connection = require("../config/redis")
-console.log("refund queue file is running")
+const connection = require("../config/redis");
+const logger = require("../config/logger");
 
 const refundQueue = new Queue("refundQueue", {
-    connection
-}); // this creates a queue with queue name refundQueue bullmq connects to redis , queue is ready to accept the jobs, it is just waiting for jobs
+    connection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 5000
+        }
+    }
+});
+
+logger.info("Refund Queue initialized");
 
 module.exports = refundQueue;
-

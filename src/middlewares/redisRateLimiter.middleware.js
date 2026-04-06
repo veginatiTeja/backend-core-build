@@ -1,5 +1,6 @@
 const { RateLimiterRedis } = require("rate-limiter-flexible");
 const redis = require("../config/redis");
+const logger = require("../config/logger");
 
 const transferLimiter = new RateLimiterRedis({
     storeClient: redis,
@@ -9,19 +10,21 @@ const transferLimiter = new RateLimiterRedis({
 });
 
 const redisTransferLimiter = async (req, res, next) => {
-    try{
-        console.log("redis translimiter checkig user requests limit");
-       const userId = req.user?.userId || req.ip;
+    try {
+        const userId = req.user?.userId || req.ip;
 
-       await transferLimiter.consume(userId);
-       next();
+        logger.debug(`Checking transfer rate limit for user: ${userId}`);
+        await transferLimiter.consume(userId);
+        
+        next();
     }
-    catch(error) {
-     return res.status(429).json({
-        success: false,
-        message: "Too many transfer attempts. Please try again later."
-     });
-    };
+    catch (error) {
+        logger.warn(`Rate limit exceeded for user: ${req.user?.userId || req.ip}`);
+        return res.status(429).json({
+            success: false,
+            message: "Too many transfer attempts. Please try again later."
+        });
+    }
 };
 
 

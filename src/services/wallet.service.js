@@ -54,14 +54,14 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
     const client = await pool.connect();
 
     try {
-        console.log("trasfer money api begins");
+        logger.info(`Transfer initiated: sender=${senderId}, receiver=${receiverId}, amount=${amount}`);
         await client.query("BEGIN");
 
-        //check if idempotency key alerdy exits
-
+        //check if idempotency key already exists
         const existing = await client.query(`SELECT response FROM idempotency_keys WHERE user_id = $1 AND idempotency_key = $2`, [senderId, idempotencyKey]);
 
         if (existing.rows.length > 0) {
+            logger.info(`Idempotency key already processed: ${idempotencyKey}, returning cached response`);
             await client.query("ROLLBACK");
             return existing.rows[0].response; // return saved response
         }
@@ -73,6 +73,8 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         // 🔐 Prevent deadlock (consistent locking order)
         const firstId = Math.min(senderId, receiverId);
         const secondId = Math.max(senderId, receiverId);
+
+        logger.debug(`Locking wallets in order: ${firstId}, ${secondId}`);
 
         // Lock both wallet rows
         await client.query(
@@ -96,6 +98,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         }
 
         if (Number(senderWallet.rows[0].balance) < amount) {
+            logger.warn(`Insufficient balance for transfer: sender=${senderId}, balance=${senderWallet.rows[0].balance}, required=${amount}`);
             throw new Error("Insufficient balance");
         }
 
@@ -117,7 +120,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
 
         if (deductResult.rows.length === 0) {
             throw new Error("Failed to deduct from sender");
-        };
+        }
 
         await addLedgerEntry(client, senderId, "DEBIT", amount, 'transfer');
 
@@ -150,11 +153,12 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
 
         await client.query("COMMIT");
 
+        logger.info(`Transfer completed successfully: sender=${senderId}, receiver=${receiverId}, sender_balance=${response.senderBalance}`);
         return response;
-
 
     } catch (error) {
         await client.query("ROLLBACK");
+        logger.error(`Transfer failed: ${error.message}`, { senderId, receiverId, amount });
         throw error;
     } finally {
         client.release();
@@ -176,25 +180,16 @@ exports.getTransactions = async (userId, cursor = null, limit = 10) => {
 
     values.push(limit);
 
-    console.log("query to get transactions ", query, "Values ", values);
+    logger.debug(`Fetching transactions for user ${userId}`, { query, valueCount: values.length });
+    
     const result = await pool.query(query, values);
 
     const transactions = result.rows;
-    console.log("transactoions ", transactions);
+    logger.info(`Retrieved ${transactions.length} transactions for user ${userId}`);
 
     const nextCursor = transactions.length > 0 ? transactions[transactions.length - 1].created_at : null;
 
     return { transactions, nextCursor };
-    //get transactions
-    // const transactionResult = await pool.query(`SELECT * FROM transactions WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [userId, limit, offset]);
-
-    // //get total count
-
-    // const countResult = await pool.query(`SELECT COUNT(*) FROM transactions WHERE sender_id = $1 OR receiver_id = $1`, [userId]);
-
-    // const total = Number(countResult.rows[0].count);
-
-    // return { total, page, limit, transactions: transactionResult.rows }
 };
 
 exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
@@ -218,15 +213,16 @@ exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
 
         if (wallet.rows.length === 0) {
             throw new Error("wallet not found");
-        };
+        }
 
-        console.log("wallet result ", wallet.rows[0]);
+        logger.debug(`Wallet locked for user ${userId}, balance: ${wallet.rows[0].balance}`);
         const currentBalance = Number(wallet.rows[0].balance);
 
         //Check sufficient balance
         if (currentBalance < amount) {
+            logger.warn(`Withdrawal denied: insufficient balance for user ${userId}, balance: ${currentBalance}, requested: ${amount}`);
             throw new Error("Insufficient balance");
-        };
+        }
 
         //deduct balance
 
@@ -324,17 +320,18 @@ exports.processWithdrawal = async (transactionId, approve) => {
                 },
                 removeOnComplete: true,
                 removeOnFail: false
-            });  //bullmq pushes job to redis and redis stores the job in a queue
+            });
 
-            console.log("Refund job added:", job.id);
-        };
-
+            logger.info(`Refund job queued: ${job.id} for user ${tx.sender_id}`);
+        }
 
         await client.query("COMMIT");
+        
+        logger.info(`Withdrawal processed successfully`);
         return { message: "Withdrawal processed successfully" };
     }
     catch (error) {
-        console.log("errror ",error);
+        logger.error(`Withdrawal failed: ${error.message}`);
         await client.query("ROLLBACK");
         throw error;
     }

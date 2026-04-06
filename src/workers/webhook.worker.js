@@ -38,27 +38,35 @@ const worker = new Worker("webhookQueue", async (job) => {
             }
         );
 
-        logger.info("✅ Webhook delivered Successfully :", {
+        logger.info("✅ Webhook delivered successfully", {
             jobId: job.id
         });
 
     } catch (error) {
-        logger.info("❌ Webhook delivery failed ", {
+        logger.error("❌ Webhook delivery failed", {
             jobId: job.id,
-            error: error.message
+            errorMessage: error.message,
+            hasResponse: !!error.response,
+            hasRequest: !!error.request,
+            responseStatus: error.response?.status,
+            responseData: error.response?.data
         });
 
+        // Log detailed error information
         if (error.response) {
-            console.log("❌ RESPONSE STATUS:", error.response.status);
-            console.log("❌ RESPONSE DATA:", error.response.data);
-        };
+            logger.error("HTTP Error Response", {
+                status: error.response.status,
+                data: error.response.data
+            });
+        }
 
-        if (error.request) {
-            console.log("❌ NO RESPONSE RECEIVED");
-        };
+        if (error.request && !error.response) {
+            logger.error("No response received from webhook endpoint", {
+                url: error.config?.url
+            });
+        }
 
         //push to DLQ
-
         await deadLetterQueue.add("failedWebhook", {
             originalJobId: job.id,
             payload: job.data,

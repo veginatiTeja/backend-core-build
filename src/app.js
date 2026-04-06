@@ -34,11 +34,16 @@ app.get("/", (req, res) => {
   });
 });
 
-//centralized error middle ware
+// Centralized error middleware - catches all errors passed via next()
 app.use((err, req, res, next) => {
-  console.error("Error: ",err.message);
+  const logger = require('./config/logger');
+  logger.error("Unhandled error in request", {
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    statusCode: err.statusCode || 500
+  });
 
-  res.status(500).json({
+  res.status(err.statusCode || 500).json({
     success: false,
     message: err.message || "Internal Server Error"
   });
