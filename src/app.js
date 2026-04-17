@@ -29,7 +29,7 @@ app.use('/admin/queues', queueDashboard.getRouter());
 
 app.get("/", (req, res) => {
   res.json({
-    message: "Wallet API running",
+    message: "Wallet API is running ",
     service: "backend-core-rebuild"
   });
 });
