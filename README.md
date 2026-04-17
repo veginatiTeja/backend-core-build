@@ -1,0 +1,557 @@
+# Backend Core Rebuild
+
+## Project Overview
+
+This is a **Wallet API** backend built with Node.js/Express. It provides user and wallet management with asynchronous job processing, rate limiting, authentication, and comprehensive API documentation.
+
+### Core Technologies
+- **Framework**: Express.js v5.2.1
+- **Database**: PostgreSQL with node-pg driver
+- **Queue System**: BullMQ with Redis backend
+- **Authentication**: JWT tokens with bcrypt password hashing
+- **Rate Limiting**: Dual approach - express-rate-limit + rate-limiter-flexible
+- **Logging**: Pino with pretty formatting
+- **API Documentation**: Swagger/OpenAPI via swagger-jsdoc
+- **Task Scheduling**: node-cron for recurring jobs
+- **Queue Monitoring**: Bull Board dashboard at `/admin/queues`
+
+## Architecture Pattern
+
+### Request Flow
+1. HTTP request → Express middleware chain
+2. Request logger & rate limiter
+3. Route handler → Controller
+4. Controller calls Services
+5. Services interact with DB/queues/external APIs
+6. Response via centralized error middleware
+
+### Async Job Processing
+- **Queue Types**: `refund`, `webhook`, `deadLetter` (DLQ)
+- **Workers**: Separate worker files process jobs from queues
+- **Dev Mode**: Runs server + refund + webhook workers concurrently
+
+## Naming Conventions
+
+| Item | Pattern | Example |
+|------|---------|---------|
+| Routes | `{resource}.route.js` | `user.route.js`, `wallet.route.js` |
+| Controllers | `{resource}.controller.js` | `user.controller.js` |
+| Services | `{resource}.service.js` | `user.service.js` |
+| Queues | `{action}.queue.js` | `refund.queue.js` |
+| Workers | `{action}.worker.js` | `refund.worker.js` |
+| Middleware | `{purpose}.middleware.js` | `auth.middleware.js` |
+| Config | `{service}.js` in `/config` | `db.js`, `redis.js` |
+| Cron Jobs | `{action}.cron.js` | `reconcilation.cron.js` |
+
+## Adding a New Endpoint
+
+Follow this pattern:
+
+### 1. Create Route (`src/routes/{resource}.route.js`)
+```javascript
+const express = require('express');
+const router = express.Router();
+const { protectRoute } = require('../middlewares/auth.middleware');
+const controller = require('../controllers/{resource}.controller');
+
+router.post('/', protectRoute, controller.create);
+router.get('/:id', protectRoute, controller.getById);
+
+module.exports = router;
+```
+
+### 2. Create Controller (`src/controllers/{resource}.controller.js`)
+```javascript
+const { asyncHandler } = require('../utils/asyncHandler');
+
+exports.create = asyncHandler(async (req, res) => {
+  const data = await require('../services/{resource}.service').create(req.body);
+  res.status(201).json({ success: true, data });
+});
+```
+
+### 3. Create Service (`src/services/{resource}.service.js`)
+- Handle business logic
+- Interact with database and external services
+- Call queue jobs as needed
+
+### 4. Register Route in `src/app.js`
+```javascript
+app.use('/api/{resource}', require('./routes/{resource}.route'));
+```
+
+## Working with Queues
+
+### Creating a Job
+```javascript
+const refundQueue = require('../queues/refund.queue');
+
+await refundQueue.add('process-refund', {
+  transactionId: '123',
+  amount: 100
+}, { 
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 5000 }
+});
+```
+
+### Processing Jobs (Worker)
+- Workers run in separate Node processes (see `src/workers/`)
+- Connect to same Redis-backed queues
+- Implement error handling and retries
+- Failed jobs go to Dead Letter Queue (DLQ)
+
+### Queue Patterns
+- **Refund Queue**: Handles refund processing asynchronously
+- **Webhook Queue**: Delivers webhooks to external systems
+- **Dead Letter Queue**: Captures permanently failed jobs for inspection
+
+## Middleware Chain
+
+Applied in order:
+1. `express.json()` - Parse JSON payloads
+2. Swagger docs - API documentation route
+3. Request logger - Log all requests
+4. `apiLimiter` - Rate limit per IP
+5. Route-specific auth/role middleware
+6. Centralized error handler
+
+### Key Middleware
+- **auth.middleware.js**: JWT validation, role-based access
+- **error.middleware.js**: Centralized error handler
+- **rateLimit.middleware.js**: IP-based rate limiting
+- **redisRateLimiter.middleware.js**: Redis-backed rate limiting
+- **idempotency.middleware.js**: Prevent duplicate requests
+- **logger.middleware.js**: Request/response logging
+- **role.middleware.js**: Role-based access control
+
+## Database Patterns
+
+### Config (`src/config/db.js`)
+- Exports pool/client for queries
+- Connection pooling via pg
+
+### Services Usage
+```javascript
+const db = require('../config/db');
+
+const user = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+```
+
+## Error Handling
+
+All async route handlers should use `asyncHandler` wrapper:
+```javascript
+const { asyncHandler } = require('../utils/asyncHandler');
+
+exports.get = asyncHandler(async (req, res) => {
+  // Async code here
+  // Errors automatically caught and passed to error middleware
+});
+```
+
+Error middleware returns:
+```json
+{
+  "success": false,
+  "message": "Error description"
+}
+```
+
+## Configuration
+
+### Environment Variables (`.env`)
+- `DATABASE_URL`: PostgreSQL connection string
+- `REDIS_URL`: Redis connection URL
+- `JWT_SECRET`: Secret for signing JWT tokens
+- `PORT`: Server port (default: 5000)
+- `NODE_ENV`: 'development' or 'production'
+
+### Queue Dashboard
+- Access at: `http://localhost:5000/admin/queues`
+- View all queues, jobs, and workers
+- Monitor job status and failures
+
+## Running the Project
+
+### Development (Local)
+```bash
+npm run dev
+# Starts: server + refund worker + webhook worker concurrently
+# Auto-reload with nodemon
+```
+
+### Production (Local)
+```bash
+npm start
+# Runs only the server
+# Workers must be started separately in production
+```
+
+## Docker & Containerization
+
+### Docker Architecture
+- **Multi-stage Dockerfile**: Optimized production image with minimal size
+- **Docker Compose**: Orchestrates wallet-api, refund-worker, webhook-worker, PostgreSQL, and Redis
+- **Volume Mounts**: Source code mounted for live-reload development
+- **Health Checks**: Built-in endpoint monitoring for container health
+
+### Docker Images & Services
+
+#### Services in docker-compose.yml
+1. **wallet-api** - Main Express server
+   - Port: 5000
+   - Health check: `GET /service/health` (30s interval)
+   - Auto-reload with nodemon in dev mode
+
+2. **refund-worker** - Background refund processor
+   - Depends on: postgres, redis
+   - Auto-restart on failure
+
+3. **webhook-worker** - Background webhook deliverer
+   - Depends on: postgres, redis
+   - Auto-restart on failure
+
+4. **postgres** - PostgreSQL database
+   - Initialized with `init.sql` on first run
+
+5. **redis** - Redis cache & queue backend
+   - Used by BullMQ for job queues
+
+### Running with Docker Compose
+
+#### Development
+```bash
+docker-compose up
+# Builds images and starts all services
+# Source code changes auto-reload (nodemon)
+# All three services (api + 2 workers) run together
+# Logs streamed to console
+```
+
+#### Specific Service
+```bash
+docker-compose up wallet-api
+# Start only the API server
+```
+
+#### Background Mode
+```bash
+docker-compose up -d
+# Runs all services in background
+# Check logs: docker-compose logs -f {service-name}
+```
+
+#### Stop Services
+```bash
+docker-compose down
+# Stops and removes all containers
+# Volumes persist (database/redis data)
+```
+
+#### Stop with Volume Cleanup
+```bash
+docker-compose down -v
+# Removes containers AND volumes
+# WARNING: Deletes database and cache data
+```
+
+### Building Docker Image
+
+#### Production Build
+```bash
+docker build -t wallet-api:latest .
+# Multi-stage build - optimized for size
+# Removes dev dependencies in final image
+```
+
+#### Run Production Container
+```bash
+docker run -p 5000:5000 \
+  --env-file .env \
+  -e DB_HOST=postgres \
+  -e REDIS_HOST=redis \
+  wallet-api:latest
+```
+
+### Dockerfile Details
+
+**Multi-Stage Build**:
+- **Stage 1 (Builder)**: Node 20-alpine, installs all dependencies
+- **Stage 2 (Production)**: Copies only required files, prunes dev dependencies
+- **Result**: Minimal production image size
+
+**Exposed Port**: 5000 (main API server)
+
+**Default Command**: `node src/server.js` (production mode)
+
+**For Development**: Docker Compose overrides with `nodemon` for auto-reload
+
+### Environment Configuration for Docker
+
+In `docker-compose.yml`, services automatically set:
+- `DB_HOST: postgres` - PostgreSQL service name
+- `REDIS_HOST: redis` - Redis service name
+
+These override `.env` file values for container-to-container networking.
+
+### Connecting to Docker Services
+
+From your local machine:
+- **API**: http://localhost:5000
+- **Queue Dashboard**: http://localhost:5000/admin/queues
+- **Swagger Docs**: http://localhost:5000/api-docs
+
+From within containers:
+- **PostgreSQL**: `postgres:5432`
+- **Redis**: `redis:6379`
+
+### Database Initialization
+
+`init.sql` runs automatically on first PostgreSQL container startup:
+```bash
+docker-compose up postgres
+# Initializes database schema on first run
+# Subsequent runs don't re-run the script
+```
+
+To reinitialize database:
+```bash
+docker-compose down -v
+# Remove volume
+docker-compose up
+# Fresh setup with init.sql
+```
+
+### Debugging Docker
+
+#### View Container Logs
+```bash
+docker-compose logs wallet-api
+docker-compose logs refund-worker
+docker-compose logs webhook_worker
+```
+
+#### Follow Logs in Real-Time
+```bash
+docker-compose logs -f wallet-api
+# Press Ctrl+C to stop
+```
+
+#### Execute Commands in Running Container
+```bash
+docker-compose exec wallet-api sh
+# Interactive shell in container
+```
+
+#### Check Container Status
+```bash
+docker-compose ps
+# Shows all services, status, ports
+```
+
+#### Validate Health
+```bash
+curl http://localhost:5000/service/health
+# Checks API health endpoint
+```
+
+## Key Files Reference
+
+| File | Purpose |
+|------|---------|
+| `src/app.js` | Express app setup, middleware registration, routes |
+| `src/server.js` | Server startup, cron jobs initialization |
+| `src/config/db.js` | Database pool configuration |
+| `src/config/redis.js` | Redis connection configuration |
+| `src/config/swagger.js` | Swagger/OpenAPI schema definition |
+| `src/queues/*.queue.js` | Queue instance creation |
+| `src/workers/*.worker.js` | Background job processors |
+| `src/cron/reconcilation.cron.js` | Scheduled reconciliation tasks |
+| `docker-compose.yml` | PostgreSQL + Redis setup for local dev |
+
+## Critical Architectural Patterns
+
+### Transaction & Concurrency Control
+Database operations use explicit `BEGIN/COMMIT/ROLLBACK` with:
+- **Row-level locking**: `SELECT ... FOR UPDATE` prevents concurrent modifications
+- **Deadlock prevention**: Locks acquired in sorted order (e.g., min/max userId) to avoid circular waits
+- **Atomicity**: All balance changes wrapped in transactions to prevent partial updates
+
+Example pattern from `wallet.service.js`:
+```javascript
+await db.query('BEGIN');
+try {
+  // Lock rows in consistent order to prevent deadlock
+  await db.query('SELECT * FROM accounts WHERE id IN ($1, $2) FOR UPDATE', [min_id, max_id]);
+  // Perform transfers with locked rows
+  await db.query('UPDATE accounts SET balance = balance - $1 WHERE id = $2', [amount, from]);
+  await db.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [amount, to]);
+  // Create ledger entry (audit log)
+  await db.query('INSERT INTO ledger ...', [...]);
+  await db.query('COMMIT');
+} catch (err) {
+  await db.query('ROLLBACK');
+  throw err;
+}
+```
+
+### Idempotency Pattern (Dual Storage)
+1. **Redis cache**: Fast dedup on retries (primary)
+   - Key: `idempotency:{key}`
+   - TTL: configurable, typically 24 hours
+2. **Database backup**: Idempotency keys table persists after cache expires
+   - Prevents duplicate processing if Redis fails
+
+Extract idempotency key from request header: `Idempotency-Key`
+
+### Ledger as Immutable Audit Log
+- Never update/delete ledger entries
+- All balance calculations derive from ledger
+- Used for reconciliation and forensic analysis
+- Separate from transactions table (which is mutable)
+
+### Async Job Processing Patterns
+- **Refund Queue**: Background job processing with retry logic
+- **Webhook Queue**: Deliver webhooks to external systems asynchronously
+- **Dead Letter Queue**: Repository for permanently failed jobs (needs consumer implementation)
+
+Job retry configuration should include:
+- Max attempts (typically 3-5)
+- Backoff strategy (exponential: 5s → 25s → 125s)
+- Dead-letter routing on final failure
+
+---
+
+## Common Development Issues & Pitfalls
+
+### ⚠️ Setup Issues
+
+1. **Hardcoded Docker Credentials**
+   - `docker-compose.yml` contains `postgres:teja2026db` password in plaintext
+   - **Fix**: Move to `.env` file, use Docker secrets for production
+
+2. **Missing Environment Variables**
+   - Local development fails without `.env` file with:
+     - `DB_HOST`, `REDIS_HOST` (defaults: localhost in `.env`, overridden to service names in docker-compose)
+     - `DATABASE_URL` or separate `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+     - `JWT_SECRET`, `REDIS_PORT`, `NODE_ENV`
+   - **Fix**: Create `.env.example` and document required variables
+
+3. **Port Conflicts**
+   - Port 5000 hardcoded in `docker-compose.yml` and `server.js`
+   - **Fix**: Use `${PORT:-5000}` pattern for environment override
+
+4. **Hot Reload with node_modules**
+   - Changes to `package.json` don't auto-sync with `docker-compose` volume mount
+   - **Fix**: When adding dependencies, rebuild: `docker-compose up --build`
+
+5. **Database Migration Timing**
+   - `init.sql` runs asynchronously on postgres startup
+   - API may connect before schema is fully initialized
+   - **Fix**: Add connection retry logic with exponential backoff in `db.js`
+
+6. **Cron Jobs Start Before DB Ready**
+   - `reconciliation.cron.js` starts immediately when server loads `src/server.js`
+   - May fail silently if database not ready
+   - **Fix**: Defer cron initialization until DB health check passes
+
+### ⚠️ Code Quality Issues
+
+1. **asyncHandler Utility Unused**
+   - Defined in `src/utils/asyncHandler.js` but controllers use manual try/catch
+   - Inconsistent error handling across codebase
+   - **Best Practice**: Wrap all async handlers:
+     ```javascript
+     exports.transfer = asyncHandler(async (req, res) => {
+       // Errors auto-caught and passed to error middleware
+     });
+     ```
+
+2. **Mixed Logging Strategies**
+   - Pino logger configured in `src/config/logger.js` but code uses `console.log`
+   - Hard to parse, filter, or forward logs in production
+   - **Fix**: Always use: `const logger = require('../config/logger'); logger.info(msg)`
+
+3. **Dual Rate-Limiting Strategies Not Unified**
+   - `express-rate-limit` (IP-based, global)
+   - `rate-limiter-flexible` (user-based, per-endpoint)
+   - Not all sensitive endpoints use `rate-limiter-flexible`
+   - **Fix**: Standardize on one strategy or document why both are needed
+
+4. **Inconsistent HTTP Status Codes**
+   - Error middleware uses both `.statusCode` property and hardcoded values
+   - Can cause 200 responses on errors if not careful
+   - **Fix**: Throw errors with `.statusCode` consistently, validate in middleware
+
+5. **Dead-Letter Queue No Consumer**
+   - `deadLetter.queue.js` created but no `dlq.worker.js` actively processes it
+   - Failed jobs accumulate without recovery mechanism
+   - **TODO**: Implement DLQ consumer to retry or alert on failures
+
+---
+
+## Key Files Reference (Pattern Exemplars)
+
+### **Critical Files to Understand**
+
+| File | Key Pattern | Why Important |
+|------|-------------|---------------|
+| [src/app.js](src/app.js) | Middleware registration order | Shows: JSON → Swagger → Logger → RateLimit → Routes → ErrorHandler. Order matters! |
+| [src/services/wallet.service.js](src/services/wallet.service.js) | Transaction atomicity + deadlock prevention | Financial ops: row locking in sorted order, immutable ledger |
+| [src/controllers/wallet.controller.js](src/controllers/wallet.controller.js) | Idempotency + response caching | Redis caching of idempotency keys, extracting Idempotency-Key header |
+| [src/routes/wallet.route.js](src/routes/wallet.route.js) | Middleware stacking + Swagger docs | Auth → RateLimit → Idempotency → Controller flow |
+| [src/workers/refund.worker.js](src/workers/refund.worker.js) | BullMQ worker pattern + DLQ | Job processing with concurrency control, failure handling |
+| [src/config/queueDashboard.js](src/config/queueDashboard.js) | Bull Board integration | Admin UI to monitor/debug job queues at `/admin/queues` |
+| [src/middlewares/idempotency.middleware.js](src/middlewares/idempotency.middleware.js) | Deduplication via Redis | Checks cache for idempotency key to prevent duplicate processing |
+| [docker-compose.yml](docker-compose.yml) | Multi-container orchestration | Shows dependency graph and service networking |
+
+### **Configuration Files**
+
+| File | Purpose |
+|------|---------|
+| [src/config/db.js](src/config/db.js) | Connection pooling, query execution, health checks |
+| [src/config/redis.js](src/config/redis.js) | Redis client for queues + caching |
+| [src/config/logger.js](src/config/logger.js) | Pino logger setup with pretty formatting |
+| [src/config/swagger.js](src/config/swagger.js) | OpenAPI schema from JSDoc comments in routes |
+
+---
+
+## Best Practices
+
+1. **Always use asyncHandler** for async route handlers to catch errors
+2. **Validate input** in controllers before passing to services
+3. **Use transactions** for multi-step database operations (especially financial)
+4. **Use logger** (not console.log) for all important operations
+5. **Handle queue failures** - configure retries and implement DLQ consumer
+6. **Document API endpoints** with JSDoc comments for Swagger
+7. **Use environment variables** for all configuration
+8. **Implement idempotency** for critical operations (extract from `Idempotency-Key` header)
+9. **Rate limit sensitive endpoints** with `rate-limiter-flexible` (user-based)
+10. **Keep services focused** - one service = one domain concern
+11. **Lock rows in sorted order** to prevent deadlocks in concurrent operations
+12. **Cache idempotency results** in Redis immediately after response sent
+
+---
+
+## Improvements & Technical Debt
+
+Priority fixes to address quality and reliability:
+- [x] **Replace manual try/catch with `asyncHandler` wrapper** - Controllers now use asyncHandler (wallet, user controllers)
+- [x] **Consolidate logging: remove console.log, always use Pino logger** - All console.log replaced with logger in controllers, services, workers, queues, cron
+- [x] **Add `.env.example` with all required variables** - Comprehensive environment template created with 30+ documented variables
+- [x] **Implement DLQ consumer worker (`src/workers/dlq.worker.js`)** - Enhanced with proper logging, error tracking, and extensible failure handling
+- [x] **Add connection retry logic to `src/config/db.js`** - Exponential backoff with max 5 retries implemented for startup resilience
+- [x] **Move secrets to `.env`, remove hardcoded credentials from docker-compose.yml** - PostgreSQL credentials now use environment variables
+- [ ] Defer cron initialization until DB health check passes
+- [ ] Standardize HTTP error status codes across middleware
+- [ ] Add comprehensive integration tests using docker-compose test environment
+
+### Completed Fixes Summary
+1. **Controllers**: wallet.controller.js, user.controller.js now use asyncHandler
+2. **Services**: wallet.service.js uses logger for all operations
+3. **Workers**: dlq.worker.js, webhook.worker.js properly log all operations
+4. **Queues**: deadLetterQueue initializes with logger
+5. **Cron**: reconciliation.cron.js logs schedule and execution
+6. **Database**: Connection retry logic with exponential backoff
+7. **Docker**: Credentials externalized to .env variables
