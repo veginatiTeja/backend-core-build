@@ -11,7 +11,10 @@ const { errorMiddleware } = require('./middlewares/error.middleware');
 const { apiLimiter } = require("./middlewares/rateLimit.middleware");
 const queueDashboard = require('./config/queueDashboard');
 const requestLogger = require('./middlewares/logger.middleware');
-app.set("trust proxy", 1);
+const mcpRoute = require('./routes/mcp.route');
+
+app.use('/mcp', mcpRoute);
+
 app.use(express.json());
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

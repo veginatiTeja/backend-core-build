@@ -15,6 +15,7 @@
   "dependencies": {
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.70.4",
