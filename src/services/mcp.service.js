@@ -10,7 +10,7 @@ const server = new McpServer({
 
 //Register your tools here
 server.tool("get_wallet_balance", "Get the balance of a wallet", {
-    userId: { type: z.string().describe("The ID of the user whose wallet balance to retrieve") }
+    userId: z.string().describe("The ID of the user whose wallet balance to retrieve") 
 }, async ({ userId }) => {
     const walletBalance = await walletService.getWalletByUserId(userId) // Implement this function to retrieve the wallet balance
     if (!walletBalance) {

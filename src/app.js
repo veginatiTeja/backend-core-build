@@ -1,8 +1,10 @@
 const express = require("express");
+const app = express();
+app.use(express.json());
+
 const swaggerUi = require("swagger-ui-express");
 
 const swaggerSpec = require('./config/swagger');
-const app = express();
 const healthRoute = require('./routes/health.route');
 const testRoute = require('./routes/test.route');
 const userRoute = require('./routes/user.route');
@@ -14,9 +16,6 @@ const requestLogger = require('./middlewares/logger.middleware');
 const mcpRoute = require('./routes/mcp.route');
 
 app.use('/mcp', mcpRoute);
-
-app.use(express.json());
-
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use(requestLogger);
