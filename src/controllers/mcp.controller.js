@@ -4,7 +4,12 @@ const mcpServer = require('../services/mcp.service'); // Import your MCP server 
 const transports = {};
 
 const sseHandler = async (req, res) => {
-    const transport =new SSEServerTransport("/mcp/messages",res);
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    const transport = new SSEServerTransport("/mcp/messages", res);
     transports[transport.sessionId] = transport;
     await mcpServer.connect(transport);
 };
