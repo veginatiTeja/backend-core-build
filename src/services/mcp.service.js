@@ -6,6 +6,8 @@ const server = new McpServer({
     description: 'A wallet cloud service',
     version: '1.0.0'
 });
+const logger = require('../config/logger');
+logger.info("MCP Server initialized and tools registered");
 
 
 //Register your tools here
@@ -120,7 +122,8 @@ server.tool("get_transactions", "Get transaction history for a user's wallet wit
 }, async ({ userId, limit }) => {
     try {
         const transactions = await walletService.getTransactions(userId, null, limit);
-
+        logger.info(`Retrieved ${transactions.length} transactions for user ${userId} and type of ${typeof transactions}`);
+        
         if (transactions.length === 0) {
             return {
                 content: [{
@@ -138,7 +141,7 @@ server.tool("get_transactions", "Get transaction history for a user's wallet wit
                 text: `Transaction for user ${userId}: \n${txList}`
             }]
         };
-        
+
     } catch (error) {
         return {
             content: [{
