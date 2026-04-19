@@ -28,7 +28,7 @@ const worker = new Worker("webhookQueue", async (job) => {
             .digest("hex");
 
         const response = await axios.post(
-            "http://webhook-receiver:4000/webhook-receiver",
+           `${process.env.WEBHOOK_RECEIVER_URL}`,
             payload,
             {
                 headers: {
