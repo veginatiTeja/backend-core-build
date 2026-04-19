@@ -1,5 +1,7 @@
 require("dotenv").config(); // tells the node load enviornment varibales from .env file
 require("./cron/reconcilation.cron");
+require('./workers/refund.worker');
+require('./workers/webhook.worker');
 const app = require('./app');
 
 const logger = require('./config/logger');
