@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config(); 
 const { Worker } = require("bullmq");
 const connection = require("../config/redis");
 const logger = require("../config/logger");
