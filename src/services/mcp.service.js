@@ -121,8 +121,8 @@ server.tool("get_transactions", "Get transaction history for a user's wallet wit
     limit: z.number().describe("The maximum number of transactions to retrieve").default(10)
 }, async ({ userId, limit }) => {
     try {
-        const transactions = await walletService.getTransactions(userId, null, limit);
-        logger.info(`Retrieved ${transactions} transactions for user ${userId} and type of ${typeof transactions}`);
+        const { transactions, nextCursor } = await walletService.getTransactions(userId, null, limit);
+        logger.info(`Retrieved ${transactions.length} transactions for user ${userId}`);
 
         if (transactions.length === 0) {
             return {
