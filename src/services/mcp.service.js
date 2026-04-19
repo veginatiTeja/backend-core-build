@@ -122,8 +122,8 @@ server.tool("get_transactions", "Get transaction history for a user's wallet wit
 }, async ({ userId, limit }) => {
     try {
         const transactions = await walletService.getTransactions(userId, null, limit);
-        logger.info(`Retrieved ${transactions.length} transactions for user ${userId} and type of ${typeof transactions}`);
-        
+        logger.info(`Retrieved ${transactions} transactions for user ${userId} and type of ${typeof transactions}`);
+
         if (transactions.length === 0) {
             return {
                 content: [{
