@@ -59,14 +59,14 @@ services:
     command: npx nodemon src/workers/webhook.worker.js
     restart: always
 
-  webhook-receiver:
-    build:
-      context: ../node-deep-practise
-    container_name: webhook-receiver
-    command: node webhookReceiver.js
-    ports:
-      - "4000:4000"
-    restart: always
+#  webhook-receiver:
+ #   build:
+  #    context: ../node-deep-practise
+   # container_name: webhook-receiver
+    #command: node webhookReceiver.js
+    #ports:
+     # - "4000:4000"
+    #restart: always
 
   postgres:
     image: postgres:15
@@ -88,3 +88,4 @@ services:
 
 volumes:
   postgres-data:
+
