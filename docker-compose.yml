@@ -15,10 +15,14 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-    command: npx nodemon src/server.js
+    command: >
+      sh -c  " until npx knex migrate:latest --env docker; do
+         echo 'waiting for DB....';
+         sleep 2;
+      done; npx nodemon src/server.js "   
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/service/health"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:5000/service/health" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -69,13 +73,12 @@ services:
     container_name: wallet-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-wallet_pass}
-      POSTGRES_DB: ${DB_NAME:-wallet_db}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-teja2026db}
+      POSTGRES_DB: ${DB_NAME:-testdb}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   redis:
     image: redis:7
