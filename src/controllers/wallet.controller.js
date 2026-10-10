@@ -68,7 +68,7 @@ exports.deposit = asyncHandler(async (req, res, next) => {
  */
 
 exports.transfer = asyncHandler(async (req, res, next) => {
-    const idempotencyKey = req.idempotencyKey;
+    const idempotencyKey = req.idempotencyKey; // This line retrieves the idempotency key from the request object. The idempotency key is a unique identifier for the request, which ensures that if the same request is sent multiple times (due to retries or network issues), it will only be processed once. This prevents duplicate transactions and maintains data integrity in financial operations like money transfers.
     const senderId = req.user.userId;
     let { receiverId, amount } = req.body;
 
@@ -124,7 +124,7 @@ exports.transfer = asyncHandler(async (req, res, next) => {
         JSON.stringify(response),
         "EX",
         3600
-    );
+    ); // Set the expiration time for the cached response to 1 hour (3600 seconds). This ensures that the cached response is automatically removed from Redis after 1 hour, preventing stale data from being served and managing memory usage effectively.
 
     logger.info(`Transfer successful`, { senderId, receiverId, amount });
     return res.status(200).json(response);

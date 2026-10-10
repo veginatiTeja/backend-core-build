@@ -5,7 +5,7 @@ const webhookQueue = require('../queues/webhook.queue');
 const logger = require('../config/logger');
 
 exports.getWalletByUserId = async (userId) => {
-    const result = await pool.query("SELECT id, balance from wallets WHERE  user_id = $1", [userId]);
+    const result = await pool.query("SELECT id, balance from wallets WHERE user_id = $1", [userId]);
     return result.rows[0];
 };
 
@@ -18,7 +18,7 @@ exports.depositMoney = async (userId, amount) => {
 
         //lock wallet row
 
-        const wallet = await client.query("SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE", [userId]);
+        const wallet = await client.query("SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE", [userId]); // This line executes a SQL query to select the wallet record for the specified user ID and locks that row for update. The "FOR UPDATE" clause ensures that no other transactions can modify this row until the current transaction is completed, preventing race conditions and ensuring data consistency during concurrent operations.
 
         if (wallet.rows.length === 0) {
             throw new Error("Wallet not found");

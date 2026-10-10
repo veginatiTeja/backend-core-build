@@ -23,4 +23,4 @@ RUN npm prune --omit=dev
 
 EXPOSE 5000
 
-CMD ["node", "src/server.js"]
+CMD ["node", "src/server.js"] 
