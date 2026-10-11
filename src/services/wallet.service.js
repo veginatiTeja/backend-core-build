@@ -99,7 +99,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
 
         if (Number(senderWallet.rows[0].balance) < amount) {
             logger.warn(`Insufficient balance for transfer: sender=${senderId}, balance=${senderWallet.rows[0].balance}, required=${amount}`);
-            throw new Error("Insufficient balance");
+            throw Object.assign(new Error("Insufficient balance"), { statusCode: 400 });
         }
 
         // ✅ Get receiver wallet
@@ -109,7 +109,7 @@ exports.transferMoney = async (senderId, receiverId, amount, idempotencyKey) => 
         );
 
         if (receiverWallet.rows.length === 0) {
-            throw new Error("Receiver wallet not found");
+            throw Object.assign(new Error("Receiver wallet not found"), { statusCode: 404 });
         }
 
         // ✅ Deduct from sender
@@ -221,7 +221,7 @@ exports.withDrawMoney = async (userId, amount, idempotencyKey) => {
         //Check sufficient balance
         if (currentBalance < amount) {
             logger.warn(`Withdrawal denied: insufficient balance for user ${userId}, balance: ${currentBalance}, requested: ${amount}`);
-            throw new Error("Insufficient balance");
+            throw Object.assign(new Error("Insufficient balance"), { statusCode: 400 });
         }
 
         //deduct balance
