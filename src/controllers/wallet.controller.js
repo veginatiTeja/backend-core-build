@@ -2,7 +2,10 @@ const walletService = require("../services/wallet.service");
 const redis = require('../config/redis');
 const logger = require('../config/logger');
 const asyncHandler = require('../utils/asyncHandler');
-
+const {
+    isPositiveFiniteNumber,
+    isPositiveInteger
+} = require("../utils/validation");
 /**
  * GET /api/wallet/balance
  * GET logged-in user's wallet balance
@@ -10,7 +13,7 @@ const asyncHandler = require('../utils/asyncHandler');
 exports.getBalance = asyncHandler(async (req, res, next) => {
     const { userId } = req.user;
     logger.info(`Fetching wallet balance for user: ${userId}`);
-    
+
     const wallet = await walletService.getWalletByUserId(userId);
 
     if (!wallet) {
@@ -35,11 +38,10 @@ exports.deposit = asyncHandler(async (req, res, next) => {
     const { userId } = req.user;
 
     const NumeriAmount = Number(amount);
-    
+
     logger.info(`Deposit request from user ${userId}: amount ${amount}`);
 
-    // Validate amount 
-    if (amount === undefined || amount === null || isNaN(NumeriAmount) || NumeriAmount <= 0) {
+    if (!isPositiveFiniteNumber(amount)) {
         const error = new Error("Invalid deposit amount");
         error.statusCode = 400;
         throw error;
@@ -80,28 +82,36 @@ exports.transfer = asyncHandler(async (req, res, next) => {
     });
 
     // ✅ Basic validation
-    if (!receiverId || amount === undefined) {
+    if (receiverId === undefined || receiverId === null ||
+        receiverId === "" || amount === undefined ||
+        amount === null || amount === "") {
         return res.status(400).json({
             success: false,
             message: "receiverId and amount are required"
         });
     }
 
-    // Convert safely
     receiverId = Number(receiverId);
     amount = Number(amount);
 
-    if (isNaN(receiverId) || isNaN(amount)) {
+    if (!isPositiveInteger(receiverId)) {
         return res.status(400).json({
             success: false,
-            message: "receiverId and amount must be valid numbers"
+            message: "receiverId must be a positive integer"
         });
     }
 
-    if (amount <= 0) {
+    if (!isPositiveFiniteNumber(amount)) {
         return res.status(400).json({
             success: false,
-            message: "Amount must be greater than 0"
+            message: "Amount must be a positive finite number"
+        });
+    }
+
+    if (Number(receiverId) === Number(senderId)) {
+        return res.status(400).json({
+            success: false,
+            message: "Cannot transfer money to yourself"
         });
     }
 
@@ -153,7 +163,7 @@ exports.withdraw = async (req, res, next) => {
 
         const numericAmount = Number(amount);
 
-        if (!numericAmount || numericAmount <= 0) {
+        if (!isPositiveFiniteNumber(amount)) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid withdrawal amount"

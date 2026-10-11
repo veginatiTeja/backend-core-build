@@ -1,9 +1,26 @@
+
+const logger = require("../config/logger");
+
 exports.errorMiddleware = (err, req, res, next) => {
- console.error("Error: ",err.message);
+    const statusCode = Number.isInteger(err.statusCode)
+        && err.statusCode >= 400
+        && err.statusCode <= 599
+        ? err.statusCode
+        : 500;
 
- res.status(err.statusCode || 500).json({
-     success: false,
-     message: err.message || "Internal Server Error",
- });
+    logger.error({
+        err,
+        method: req.method,
+        path: req.originalUrl,
+        statusCode
+    }, "Request failed");
+
+    const message = statusCode >= 500
+        ? "Internal Server Error"
+        : err.message || "Request failed";
+
+    res.status(statusCode).json({
+        success: false,
+        message
+    });
 };
-
