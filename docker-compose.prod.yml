@@ -1,0 +1,76 @@
+services:
+  wallet-api:
+    build: .
+    container_name: wallet-api
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    command: ["node", "src/server.js"]
+    restart: always
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:5000/service/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  refund-worker:
+    build: .
+    container_name: refund-worker
+    depends_on:
+      - postgres
+      - redis
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    command: ["node", "src/workers/refund.worker.js"]
+    restart: always
+
+  webhook_worker:
+    build: .
+    container_name: webhook_worker
+    depends_on:
+      - postgres
+      - redis
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    command: ["node","src/workers/webhook.worker.js"]
+    restart: always
+
+#  webhook-receiver:
+ #   build:
+  #    context: ../node-deep-practise
+   # container_name: webhook-receiver
+    #command: node webhookReceiver.js
+    #ports:
+     # - "4000:4000"
+    #restart: always
+
+  postgres:
+    image: postgres:15
+    container_name: wallet-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME must be set}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: wallet-redis
+
+volumes:
+  postgres-data:
